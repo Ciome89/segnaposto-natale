@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Segnaposto di Natale</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #0b1a2b;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #fff;
+  }
+  #video {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+  }
+  #canvas3d {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+  #start {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(circle at 50% 30%, #1d3b5c, #0b1a2b);
+  }
+  #start h1 { margin: 0; font-size: 28px; color: #f5d776; }
+  #start p { margin: 0; font-size: 16px; opacity: .9; max-width: 320px; }
+  #btn {
+    font-size: 18px;
+    padding: 14px 28px;
+    border: 0;
+    border-radius: 30px;
+    background: #f5d776;
+    color: #3a2a00;
+    font-weight: 700;
+  }
+  #msg {
+    min-height: 20px;
+    font-size: 14px;
+    color: #ffb4b4;
+    max-width: 320px;
+  }
+  #info {
+    position: fixed;
+    left: 8px;
+    bottom: 8px;
+    z-index: 5;
+    font-size: 12px;
+    background: rgba(0,0,0,.45);
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<video id="video" playsinline muted autoplay></video>
+<canvas id="canvas3d"></canvas>
+<div id="info"></div>
+
+<div id="start">
+  <h1>Buon Natale!</h1>
+  <p id="saluto">Tocca il pulsante e consenti l'uso della fotocamera.</p>
+  <button id="btn">Inizia</button>
+  <div id="msg"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+
+// ---------- Nome dall'indirizzo: ...html?nome=Marco ----------
+const params = new URLSearchParams(window.location.search);
+let nome = (params.get('nome') || 'Marco').trim().slice(0, 18);
+if (!nome) nome = 'Marco';
+document.getElementById('saluto').textContent =
+  'Ciao ' + nome + '! Tocca il pulsante e consenti l\'uso della fotocamera.';
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas3d');
+const msg = document.getElementById('msg');
+const info = document.getElementById('info');
+const startScreen = document.getElementById('start');
+
+// ---------- Scena 3D ----------
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+renderer.setClearColor(0x000000, 0);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 50);
+camera.position.set(0, 0, 3);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const luce1 = new THREE.DirectionalLight(0xfff2cc, 1.6);
+luce1.position.set(2, 3, 4);
+scene.add(luce1);
+const luce2 = new THREE.DirectionalLight(0xffd27a, 0.8);
+luce2.position.set(-3, -1, 2);
+scene.add(luce2);
+
+const gruppoNome = new THREE.Group();
+scene.add(gruppoNome);
+
+let larghezzaTesto = 1;
+
+function adattaNome() {
+  const aspect = window.innerWidth / window.innerHeight;
+  const larghezzaVisibile = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z * aspect;
+  const scala = (larghezzaVisibile * 0.85) / larghezzaTesto;
+  gruppoNome.scale.setScalar(scala);
+}
+
+function ridimensiona() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  adattaNome();
+}
+window.addEventListener('resize', ridimensiona);
+ridimensiona();
+
+// ---------- Nome 3D dorato ----------
+const fontLoader = new FontLoader();
+fontLoader.load(
+  'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json',
+  (font) => {
+    const geo = new TextGeometry(nome, {
+      font: font,
+      size: 0.5,
+      height: 0.18,
+      curveSegments: 6,
+      bevelEnabled: true,
+      bevelThickness: 0.02,
+      bevelSize: 0.015,
+      bevelSegments: 3
+    });
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    larghezzaTesto = bb.max.x - bb.min.x;
+    geo.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -(bb.min.z + bb.max.z) / 2);
+
+    const materiale = new THREE.MeshPhongMaterial({
+      color: 0xffc83d,
+      specular: 0xfff2b0,
+      shininess: 90
+    });
+    const mesh = new THREE.Mesh(geo, materiale);
+    gruppoNome.add(mesh);
+    adattaNome();
+  },
+  undefined,
+  () => { msg.textContent = 'Impossibile caricare il carattere del nome.'; }
+);
+
+// ---------- Neve ----------
+function creaTexturaFiocco() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.8)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+const NUM_FIOCCHI = 350;
+const pos = new Float32Array(NUM_FIOCCHI * 3);
+const vel = new Float32Array(NUM_FIOCCHI);
+const fase = new Float32Array(NUM_FIOCCHI);
+const LIM_X = 3.2, LIM_Y = 3.2;
+
+for (let i = 0; i < NUM_FIOCCHI; i++) {
+  pos[i * 3]     = (Math.random() * 2 - 1) * LIM_X;
+  pos[i * 3 + 1] = (Math.random() * 2 - 1) * LIM_Y;
+  pos[i * 3 + 2] = Math.random() * 3 - 1.5;
+  vel[i] = 0.25 + Math.random() * 0.45;
+  fase[i] = Math.random() * Math.PI * 2;
+}
+const geoNeve = new THREE.BufferGeometry();
+geoNeve.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+const matNeve = new THREE.PointsMaterial({
+  size: 0.09,
+  map: creaTexturaFiocco(),
+  transparent: true,
+  depthWrite: false,
+  opacity: 0.95
+});
+const neve = new THREE.Points(geoNeve, matNeve);
+scene.add(neve);
+
+// ---------- Ciclo di animazione ----------
+const clock = new THREE.Clock();
+let frameContati = 0;
+let ultimoFps = performance.now();
+
+function animazione() {
+  requestAnimationFrame(animazione);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  // Il nome oscilla dolcemente
+  gruppoNome.rotation.y = Math.sin(t * 0.6) * 0.35;
+  gruppoNome.rotation.x = Math.sin(t * 0.4) * 0.06;
+  gruppoNome.position.y = Math.sin(t * 0.9) * 0.04;
+
+  // La neve cade
+  const p = geoNeve.attributes.position.array;
+  for (let i = 0; i < NUM_FIOCCHI; i++) {
+    p[i * 3 + 1] -= vel[i] * dt;
+    p[i * 3] += Math.sin(t + fase[i]) * 0.15 * dt;
+    if (p[i * 3 + 1] < -LIM_Y) {
+      p[i * 3 + 1] = LIM_Y;
+      p[i * 3] = (Math.random() * 2 - 1) * LIM_X;
+    }
+  }
+  geoNeve.attributes.position.needsUpdate = true;
+
+  renderer.render(scene, camera);
+
+  // Contatore fotogrammi al secondo (utile per i test)
+  frameContati++;
+  const ora = performance.now();
+  if (ora - ultimoFps >= 1000) {
+    info.textContent = frameContati + ' fps';
+    frameContati = 0;
+    ultimoFps = ora;
+  }
+}
+
+// ---------- Fotocamera ----------
+async function avviaFotocamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error('Questo browser non permette l\'uso della fotocamera (serve una pagina HTTPS).');
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    },
+    audio: false
+  });
+  video.srcObject = stream;
+  await video.play();
+}
+
+document.getElementById('btn').addEventListener('click', async () => {
+  msg.textContent = '';
+  try {
+    await avviaFotocamera();
+    startScreen.style.display = 'none';
+    info.style.display = 'block';
+    animazione();
+  } catch (e) {
+    let testo = 'Errore: ' + (e && e.message ? e.message : e);
+    if (e && e.name === 'NotAllowedError') {
+      testo = 'Permesso alla fotocamera negato. Consentilo nelle impostazioni del browser e ricarica la pagina.';
+    }
+    msg.textContent = testo;
+  }
+});
+</script>
+</body>
+</html>
