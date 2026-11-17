@@ -74,13 +74,18 @@
       return scene;
     }
 
-    button.addEventListener('click', async () => {
-      button.disabled = true;
-      message.textContent = 'Richiesta accesso alla fotocamera…';
-      try {
-        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-          throw new Error('Apri il sito tramite HTTPS con Chrome o un browser aggiornato.');
-        }
+    
+button.addEventListener('click', () => {
+  button.disabled = true;
+  message.textContent = 'Avvio della fotocamera…';
+
+  intro.style.display = 'none';
+  hint.style.display = 'block';
+  hint.textContent = 'Richiesta accesso alla fotocamera…';
+
+  buildScene();
+});
+
         // Richiede il permesso durante il tocco dell'utente. AR.js avvierà poi il proprio flusso video.
         const permissionStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
         permissionStream.getTracks().forEach(track => track.stop());
