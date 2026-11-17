@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Segnaposto di Natale - AR</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #0b1a2b;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #fff;
+  }
+  #container {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  #start {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(circle at 50% 30%, #1d3b5c, #0b1a2b);
+  }
+  #start h1 { margin: 0; font-size: 28px; color: #f5d776; }
+  #start p { margin: 0; font-size: 16px; opacity: .9; max-width: 320px; }
+  #btn {
+    font-size: 18px;
+    padding: 14px 28px;
+    border: 0;
+    border-radius: 30px;
+    background: #f5d776;
+    color: #3a2a00;
+    font-weight: 700;
+  }
+  #msg {
+    min-height: 20px;
+    font-size: 14px;
+    color: #ffb4b4;
+    max-width: 320px;
+  }
+  #alt {
+    font-size: 14px;
+    color: #f5d776;
+  }
+  #hint {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 14px;
+    z-index: 5;
+    text-align: center;
+    display: none;
+    pointer-events: none;
+  }
+  #hint span {
+    background: rgba(0,0,0,.55);
+    padding: 8px 14px;
+    border-radius: 18px;
+    font-size: 15px;
+  }
+  #info {
+    position: fixed;
+    left: 8px;
+    bottom: 8px;
+    z-index: 5;
+    font-size: 12px;
+    background: rgba(0,0,0,.45);
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="container"></div>
+<div id="hint"><span id="hintText">Inquadra la scheda</span></div>
+<div id="info"></div>
+
+<div id="start">
+  <h1>Buon Natale!</h1>
+  <p id="saluto">Tocca il pulsante, consenti la fotocamera e inquadra la tua scheda.</p>
+  <button id="btn">Inizia</button>
+  <div id="msg"></div>
+  <a id="alt" href="#">Versione semplice (senza scheda)</a>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/",
+    "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+import { MindARThree } from 'mindar-image-three';
+
+// ---------- Nome dall'indirizzo: ...html?nome=Thomas ----------
+const params = new URLSearchParams(window.location.search);
+let nome = (params.get('nome') || 'Thomas').trim().slice(0, 18);
+if (!nome) nome = 'Thomas';
+document.getElementById('saluto').textContent =
+  'Ciao ' + nome + '! Tocca il pulsante, consenti la fotocamera e inquadra la tua scheda.';
+document.getElementById('alt').href = 'fase-a-nome-neve.html?nome=' + encodeURIComponent(nome);
+
+const msg = document.getElementById('msg');
+const hint = document.getElementById('hint');
+const hintText = document.getElementById('hintText');
+const info = document.getElementById('info');
+const startScreen = document.getElementById('start');
+
+async function avvia() {
+  // ---------- MindAR ----------
+  const mindarThree = new MindARThree({
+    container: document.getElementById('container'),
+    imageTargetSrc: './targets.mind',
+    uiLoading: 'no',
+    uiScanning: 'no',
+    uiError: 'no',
+    filterMinCF: 0.001,
+    filterBeta: 0.01,
+    missTolerance: 6,
+    warmupTolerance: 4
+  });
+  const { renderer, scene, camera } = mindarThree;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const luce1 = new THREE.DirectionalLight(0xfff2cc, 1.6);
+  luce1.position.set(1, 2, 3);
+  scene.add(luce1);
+  const luce2 = new THREE.DirectionalLight(0xffd27a, 0.8);
+  luce2.position.set(-2, -1, 2);
+  scene.add(luce2);
+
+  // Ancora legata alla scheda: 1 unità = larghezza della scheda
+  const anchor = mindarThree.addAnchor(0);
+  const gruppoNome = new THREE.Group();
+  gruppoNome.position.set(0, 0, 0.18);
+  anchor.group.add(gruppoNome);
+
+  // ---------- Nome 3D dorato ----------
+  await new Promise((resolve, reject) => {
+    new FontLoader().load(
+      'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/fonts/helvetiker_bold.typeface.json',
+      (font) => {
+        const geo = new TextGeometry(nome, {
+          font: font,
+          size: 0.5,
+          height: 0.18,
+          curveSegments: 6,
+          bevelEnabled: true,
+          bevelThickness: 0.02,
+          bevelSize: 0.015,
+          bevelSegments: 3
+        });
+        geo.computeBoundingBox();
+        const bb = geo.boundingBox;
+        const larghezza = bb.max.x - bb.min.x;
+        geo.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -(bb.min.z + bb.max.z) / 2);
+        const mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+          color: 0xffc83d,
+          specular: 0xfff2b0,
+          shininess: 90
+        }));
+        // Il nome occupa circa l'80% della larghezza della scheda
+        mesh.scale.setScalar(0.8 / larghezza);
+        gruppoNome.add(mesh);
+        resolve();
+      },
+      undefined,
+      () => reject(new Error('Impossibile caricare il carattere del nome.'))
+    );
+  });
+
+  // ---------- Neve intorno al nome ----------
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.8)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+
+  const NUM = 220;
+  const X = 0.7, Y0 = -0.25, Y1 = 0.9, Z0 = 0.02, Z1 = 0.7;
+  const pos = new Float32Array(NUM * 3);
+  const vel = new Float32Array(NUM);
+  const fase = new Float32Array(NUM);
+  for (let i = 0; i < NUM; i++) {
+    pos[i * 3]     = (Math.random() * 2 - 1) * X;
+    pos[i * 3 + 1] = Y0 + Math.random() * (Y1 - Y0);
+    pos[i * 3 + 2] = Z0 + Math.random() * (Z1 - Z0);
+    vel[i] = 0.08 + Math.random() * 0.14;
+    fase[i] = Math.random() * Math.PI * 2;
+  }
+  const geoNeve = new THREE.BufferGeometry();
+  geoNeve.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const neve = new THREE.Points(geoNeve, new THREE.PointsMaterial({
+    size: 0.035,
+    map: new THREE.CanvasTexture(c),
+    transparent: true,
+    depthWrite: false
+  }));
+  anchor.group.add(neve);
+
+  // ---------- Stato del riconoscimento ----------
+  anchor.onTargetFound = () => { hint.style.display = 'none'; };
+  anchor.onTargetLost = () => {
+    hintText.textContent = 'Inquadra la scheda';
+    hint.style.display = 'block';
+  };
+
+  // ---------- Avvio ----------
+  await mindarThree.start();
+  startScreen.style.display = 'none';
+  hint.style.display = 'block';
+  info.style.display = 'block';
+
+  const clock = new THREE.Clock();
+  let frame = 0;
+  let ultimo = performance.now();
+
+  renderer.setAnimationLoop(() => {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+
+    gruppoNome.rotation.z = Math.sin(t * 0.7) * 0.05;
+    gruppoNome.position.y = Math.sin(t * 0.9) * 0.02;
+
+    const p = geoNeve.attributes.position.array;
+    for (let i = 0; i < NUM; i++) {
+      p[i * 3 + 1] -= vel[i] * dt;
+      p[i * 3] += Math.sin(t + fase[i]) * 0.03 * dt;
+      if (p[i * 3 + 1] < Y0) {
+        p[i * 3 + 1] = Y1;
+        p[i * 3] = (Math.random() * 2 - 1) * X;
+      }
+    }
+    geoNeve.attributes.position.needsUpdate = true;
+
+    renderer.render(scene, camera);
+
+    frame++;
+    const ora = performance.now();
+    if (ora - ultimo >= 1000) {
+      info.textContent = frame + ' fps';
+      frame = 0;
+      ultimo = ora;
+    }
+  });
+}
+
+document.getElementById('btn').addEventListener('click', async () => {
+  msg.textContent = '';
+  document.getElementById('btn').disabled = true;
+  try {
+    await avvia();
+  } catch (e) {
+    document.getElementById('btn').disabled = false;
+    let testo = 'Errore: ' + (e && e.message ? e.message : e);
+    if (e && e.name === 'NotAllowedError') {
+      testo = 'Permesso alla fotocamera negato. Consentilo nelle impostazioni del browser e ricarica la pagina.';
+    }
+    msg.textContent = testo;
+  }
+});
+</script>
+</body>
+</html>
