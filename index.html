@@ -7,53 +7,94 @@
   <title>Segnaposto di Natale – MARCO</title>
   <style>
     html, body { margin:0; width:100%; height:100%; overflow:hidden; background:#101820; font-family:system-ui,sans-serif; }
-    #intro { position:fixed; z-index:10; inset:0; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:26px; text-align:center; color:#fff; background:linear-gradient(160deg,#10251e,#101820 65%,#3a1717); }
+    #intro { position:fixed; z-index:20; inset:0; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:26px; text-align:center; color:#fff; background:linear-gradient(160deg,#10251e,#101820 65%,#3a1717); }
     #intro h1 { color:#f2cf79; margin:0 0 12px; font-size:30px; letter-spacing:2px; }
     #intro p { max-width:340px; line-height:1.5; color:#e8e4d9; }
     #start { border:0; border-radius:28px; padding:14px 24px; margin-top:12px; background:#d9b45d; color:#211b10; font-weight:700; font-size:16px; }
-    #hint { position:fixed; z-index:5; bottom:18px; left:12px; right:12px; padding:10px 14px; border-radius:14px; color:white; background:#0009; text-align:center; font-size:13px; pointer-events:none; }
-    a-scene { position:fixed; inset:0; }
+    #start:disabled { opacity:.65; }
+    #message { min-height:1.5em; max-width:340px; color:#f7d77e; font-size:14px; }
+    #hint { position:fixed; z-index:10; bottom:18px; left:12px; right:12px; padding:10px 14px; border-radius:14px; color:white; background:#0009; text-align:center; font-size:13px; pointer-events:none; display:none; }
+    a-scene { position:fixed !important; inset:0; width:100%; height:100%; }
+    a-scene canvas { display:block; }
   </style>
-  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.7/aframe/build/aframe-ar.js"></script>
 </head>
 <body>
   <div id="intro">
     <h1>BUON NATALE</h1>
-    <p>Il tuo segnaposto prende vita.<br>Premi il pulsante e consenti l'accesso alla fotocamera. Poi inquadra il simbolo AR sul tavolo.</p>
+    <p>Il tuo segnaposto prende vita.<br>Premi il pulsante, consenti l'accesso alla fotocamera e inquadra il marker Hiro.</p>
     <button id="start">AVVIA LA FOTOCAMERA</button>
+    <div id="message" role="status" aria-live="polite"></div>
   </div>
-  <div id="hint">Inquadra il marker Hiro stampato sul segnaposto</div>
-
-  <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono;">
-    <a-marker preset="hiro">
-      <!-- Effetto scritta dorata stratificata per dare profondità visiva -->
-      <a-entity position="0 0.78 0">
-        <a-text value="MARCO" align="center" color="#8a5a12" width="5.2" position="0.018 -0.018 -0.025" scale="1.05 1.05 1.05"></a-text>
-        <a-text value="MARCO" align="center" color="#f7d77e" width="5.2" position="0 0 0" scale="1.05 1.05 1.05"></a-text>
-        <a-text value="BUON NATALE" align="center" color="#ffffff" width="3.4" position="0 -0.38 0" scale="0.7 0.7 0.7"></a-text>
-        <a-plane position="0 -0.53 -0.01" width="2.45" height="0.025" color="#d7b45f"></a-plane>
-        <a-sphere position="-1.25 0.12 0" radius="0.09" color="#c52828"></a-sphere>
-        <a-sphere position="1.25 0.12 0" radius="0.09" color="#287b4b"></a-sphere>
-        <a-star position="-1.65 0.52 0" color="#f7d77e" radius-inner="0.05" radius-outer="0.11"></a-star>
-        <a-star position="1.65 0.52 0" color="#f7d77e" radius-inner="0.05" radius-outer="0.11"></a-star>
-      </a-entity>
-      <!-- Piccole particelle decorative -->
-      <a-sphere position="-0.65 1.35 0.18" radius="0.035" color="#ffffff" animation="property: position; to: -0.65 0.55 0.18; dur: 2200; loop: true; easing: linear"></a-sphere>
-      <a-sphere position="0.15 1.55 -0.2" radius="0.045" color="#ffffff" animation="property: position; to: 0.15 0.6 -0.2; dur: 2800; loop: true; easing: linear"></a-sphere>
-      <a-sphere position="0.75 1.25 0.25" radius="0.03" color="#ffffff" animation="property: position; to: 0.75 0.45 0.25; dur: 1900; loop: true; easing: linear"></a-sphere>
-    </a-marker>
-    <a-entity camera></a-entity>
-  </a-scene>
+  <div id="hint">Inquadra il marker Hiro sul tavolo</div>
 
   <script>
     const intro = document.getElementById('intro');
-    document.getElementById('start').addEventListener('click', async () => {
-      intro.style.display = 'none';
-      // L'avvio del flusso AR richiede un contesto HTTPS e il permesso della fotocamera.
-      const scene = document.querySelector('a-scene');
-      if (scene && scene.hasLoaded) return;
-      if (scene) scene.addEventListener('loaded', () => {}, { once: true });
+    const button = document.getElementById('start');
+    const message = document.getElementById('message');
+    const hint = document.getElementById('hint');
+
+    function buildScene() {
+      const scene = document.createElement('a-scene');
+      scene.setAttribute('embedded', '');
+      scene.setAttribute('vr-mode-ui', 'enabled: false');
+      scene.setAttribute('renderer', 'antialias: true; alpha: true; logarithmicDepthBuffer: true;');
+      scene.setAttribute('arjs', 'sourceType: webcam; debugUIEnabled: false; detectionMode: mono;');
+      scene.innerHTML = `
+        <a-marker preset="hiro">
+          <a-entity position="0 0.78 0">
+            <a-text value="MARCO" align="center" color="#8a5a12" width="5.2" position="0.018 -0.018 -0.025" scale="1.05 1.05 1.05"></a-text>
+            <a-text value="MARCO" align="center" color="#f7d77e" width="5.2" position="0 0 0" scale="1.05 1.05 1.05"></a-text>
+            <a-text value="BUON NATALE" align="center" color="#ffffff" width="3.4" position="0 -0.38 0" scale="0.7 0.7 0.7"></a-text>
+            <a-plane position="0 -0.53 -0.01" width="2.45" height="0.025" color="#d7b45f"></a-plane>
+            <a-sphere position="-1.25 0.12 0" radius="0.09" color="#c52828"></a-sphere>
+            <a-sphere position="1.25 0.12 0" radius="0.09" color="#287b4b"></a-sphere>
+            <a-star position="-1.65 0.52 0" color="#f7d77e" radius-inner="0.05" radius-outer="0.11"></a-star>
+            <a-star position="1.65 0.52 0" color="#f7d77e" radius-inner="0.05" radius-outer="0.11"></a-star>
+          </a-entity>
+          <a-sphere position="-0.65 1.35 0.18" radius="0.035" color="#ffffff" animation="property: position; to: -0.65 0.55 0.18; dur: 2200; loop: true; easing: linear"></a-sphere>
+          <a-sphere position="0.15 1.55 -0.2" radius="0.045" color="#ffffff" animation="property: position; to: 0.15 0.6 -0.2; dur: 2800; loop: true; easing: linear"></a-sphere>
+          <a-sphere position="0.75 1.25 0.25" radius="0.03" color="#ffffff" animation="property: position; to: 0.75 0.45 0.25; dur: 1900; loop: true; easing: linear"></a-sphere>
+        </a-marker>
+        <a-entity camera></a-entity>`;
+      document.body.appendChild(scene);
+      scene.addEventListener('camera-init', () => {
+        hint.textContent = 'Fotocamera attiva. Inquadra il marker Hiro.';
+      });
+      scene.addEventListener('camera-error', (event) => {
+        hint.textContent = 'Errore fotocamera: controlla i permessi e ricarica la pagina.';
+        message.textContent = 'AR.js non è riuscito ad avviare il video. ' + (event.detail && event.detail.error ? event.detail.error.message : '');
+        intro.style.display = 'flex';
+        button.disabled = false;
+      });
+      scene.addEventListener('arjs-video-loaded', () => {
+        hint.textContent = 'Video ricevuto. Inquadra il marker Hiro.';
+      });
+      return scene;
+    }
+
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      message.textContent = 'Richiesta accesso alla fotocamera…';
+      try {
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Apri il sito tramite HTTPS con Chrome o un browser aggiornato.');
+        }
+        // Richiede il permesso durante il tocco dell'utente. AR.js avvierà poi il proprio flusso video.
+        const permissionStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+        permissionStream.getTracks().forEach(track => track.stop());
+        intro.style.display = 'none';
+        hint.style.display = 'block';
+        hint.textContent = 'Avvio fotocamera…';
+        buildScene();
+        setTimeout(() => { hint.textContent = 'Inquadra il marker Hiro sul tavolo'; }, 3500);
+      } catch (error) {
+        message.textContent = error.name === 'NotAllowedError'
+          ? 'Permesso negato. Consenti la fotocamera nelle impostazioni del sito e riprova.'
+          : (error.message || 'Impossibile avviare la fotocamera.');
+        button.disabled = false;
+      }
     });
   </script>
 </body>
