@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Prova Hiro ottimizzata</title>
+<title>Prova Hiro</title>
 
 <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
 <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.7/aframe/build/aframe-ar.js"></script>
@@ -43,18 +43,10 @@ button {
 #status {
   position: fixed;
   bottom: 20px;
-  left: 0;
   width: 100%;
   z-index: 20;
   color: white;
   text-align: center;
-  font-size: 16px;
-  pointer-events: none;
-}
-
-a-scene {
-  position: fixed;
-  inset: 0;
 }
 </style>
 </head>
@@ -63,32 +55,30 @@ a-scene {
 
 <div id="start">
   <h2>Prova realtà aumentata</h2>
-  <p>Versione ottimizzata per Android</p>
+  <p>Premi per avviare la fotocamera</p>
   <button id="button">AVVIA FOTOCAMERA</button>
 </div>
 
 <div id="status">In attesa</div>
 
 <a-scene
-  id="scene"
   embedded
   vr-mode-ui="enabled: false"
-  renderer="antialias: false; precision: mediump; logarithmicDepthBuffer: false"
-  arjs="sourceType: webcam; trackingMethod: best; detectionMode: mono; maxDetectionRate: 30; debugUIEnabled: false"
+  renderer="antialias: false; precision: mediump"
+  arjs="sourceType: webcam; trackingMethod: best; detectionMode: mono; maxDetectionRate: 30; debugUIEnabled: false">
 
   <a-marker preset="hiro">
 
     <a-box
       position="0 0.5 0"
-      material="color: #D4AF37; metalness: 0.5; roughness: 0.4">
+      material="color: #D4AF37">
     </a-box>
 
     <a-text
       value="MARCO"
       position="0 1.1 0"
       align="center"
-      color="#D4AF37"
-      scale="1.5 1.5 1.5">
+      color="#D4AF37">
     </a-text>
 
   </a-marker>
@@ -97,39 +87,22 @@ a-scene {
 </a-scene>
 
 <script>
-const scene = document.querySelector("#scene");
 const button = document.querySelector("#button");
 const start = document.querySelector("#start");
 const status = document.querySelector("#status");
 const marker = document.querySelector("a-marker");
 
-let started = false;
-
 button.addEventListener("click", () => {
-  if (started) return;
-  started = true;
-
-  status.textContent = "Avvio fotocamera...";
-
-  marker.addEventListener("markerFound", () => {
-    status.textContent = "HIRO RICONOSCIUTO";
-  });
-
-  marker.addEventListener("markerLost", () => {
-    status.textContent = "CERCA MARKER HIRO";
-  });
-
-  scene.addEventListener("camera-init", () => {
-    status.textContent = "Fotocamera attiva: cerca Hiro";
-  });
-
-  scene.addEventListener("camera-error", () => {
-    status.textContent = "Errore fotocamera";
-    started = false;
-  });
-
   start.style.display = "none";
-  scene.style.display = "block";
+  status.textContent = "Avvio fotocamera...";
+});
+
+marker.addEventListener("markerFound", () => {
+  status.textContent = "HIRO RICONOSCIUTO";
+});
+
+marker.addEventListener("markerLost", () => {
+  status.textContent = "CERCA MARKER HIRO";
 });
 </script>
 
