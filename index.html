@@ -75,6 +75,25 @@ button.addEventListener('click', async () => {
 
     video.srcObject = stream;
     video.style.display = 'block';
+    video.style.position = 'fixed';
+video.style.inset = '0';
+video.style.width = '100vw';
+video.style.height = '100dvh';
+video.style.objectFit = 'contain';
+video.style.zIndex = '9999';
+video.style.background = 'black';
+
+video.onended = () => {
+  status.textContent = 'IL VIDEO È TERMINATO';
+};
+
+video.onerror = () => {
+  status.textContent = 'ERRORE VIDEO';
+};
+
+video.onplaying = () => {
+  status.textContent = 'VIDEO IN RIPRODUZIONE';
+};
 
     await video.play();
 
