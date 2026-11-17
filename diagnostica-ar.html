@@ -1,0 +1,101 @@
+
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnostica AR</title>
+
+<style>
+body {
+  margin: 0;
+  padding: 20px;
+  background: #111;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+h2 { color: #e6bd62; }
+#stato {
+  margin-top: 20px;
+  padding: 15px;
+  background: #292929;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+button {
+  width: 100%;
+  padding: 18px;
+  margin-top: 20px;
+  font-size: 18px;
+  background: #d5ad50;
+  border: 0;
+  border-radius: 8px;
+}
+video {
+  display: none;
+  width: 100%;
+  margin-top: 20px;
+  background: black;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Diagnostica fotocamera AR</h2>
+<p>Questa pagina verifica l'accesso alla fotocamera.</p>
+
+<button id="avvia">AVVIA TEST</button>
+
+<div id="stato">In attesa di avvio...</div>
+
+<video id="video" autoplay muted playsinline></video>
+
+<script>
+const stato = document.getElementById("stato");
+const video = document.getElementById("video");
+const pulsante = document.getElementById("avvia");
+
+function scrivi(messaggio) {
+  stato.textContent += "\n" + messaggio;
+}
+
+pulsante.addEventListener("click", async () => {
+  stato.textContent = "Pulsante premuto.";
+
+  try {
+    scrivi("Verifica supporto fotocamera...");
+
+    if (!navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia) {
+      throw new Error("getUserMedia non disponibile. Verifica HTTPS.");
+    }
+
+    scrivi("Richiesta accesso alla fotocamera...");
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" }
+      }
+    });
+
+    scrivi("ACCESSO FOTOCAMERA RIUSCITO.");
+
+    video.srcObject = stream;
+    video.style.display = "block";
+
+    await video.play();
+
+    scrivi("VIDEO AVVIATO CORRETTAMENTE.");
+
+  } catch (errore) {
+    scrivi("ERRORE: " + errore.name);
+    scrivi("DETTAGLIO: " + errore.message);
+  }
+});
+</script>
+
+</body>
+</html>
