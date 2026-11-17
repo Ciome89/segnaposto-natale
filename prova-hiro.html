@@ -1,0 +1,132 @@
+
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prova AR Hiro</title>
+
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.7/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+
+    #start {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: #151515;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 20px;
+    }
+
+    button {
+      padding: 16px 28px;
+      font-size: 18px;
+      background: #c99b35;
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    #status {
+      margin-top: 20px;
+      font-size: 16px;
+    }
+
+    a-scene {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="start">
+  <h2>Prova realtà aumentata</h2>
+  <p>Premi per avviare la fotocamera</p>
+  <button id="button">AVVIA FOTOCAMERA</button>
+  <div id="status">In attesa</div>
+</div>
+
+<a-scene
+  id="scene"
+  embedded
+  vr-mode-ui="enabled: false"
+  renderer="logarithmicDepthBuffer: true; antialias: true"
+  style="display:none">
+
+  <a-marker
+    id="hiro"
+    preset="hiro"
+    emitevents="true">
+
+    <a-box
+      position="0 0.5 0"
+      material="color: #D4AF37; metalness: 0.7; roughness: 0.25">
+    </a-box>
+
+    <a-text
+      value="MARCO"
+      position="0 1.1 0"
+      align="center"
+      color="#D4AF37"
+      scale="1.5 1.5 1.5">
+    </a-text>
+
+  </a-marker>
+
+  <a-entity camera></a-entity>
+</a-scene>
+
+<script>
+  const scene = document.querySelector("#scene");
+  const button = document.querySelector("#button");
+  const status = document.querySelector("#status");
+  const start = document.querySelector("#start");
+  const marker = document.querySelector("#hiro");
+
+  button.addEventListener("click", () => {
+    status.textContent = "Avvio fotocamera...";
+
+    scene.addEventListener("camera-init", () => {
+      status.textContent = "Fotocamera attiva: cerca Hiro";
+    }, { once: true });
+
+    scene.addEventListener("camera-error", () => {
+      status.textContent = "Errore nell'avvio della fotocamera";
+    }, { once: true });
+
+    marker.addEventListener("markerFound", () => {
+      status.textContent = "MARKER HIRO RICONOSCIUTO";
+    });
+
+    marker.addEventListener("markerLost", () => {
+      status.textContent = "Marker non visibile";
+    });
+
+    start.style.display = "none";
+    scene.style.display = "block";
+
+    scene.setAttribute(
+      "arjs",
+      "sourceType: webcam; trackingMethod: best; debugUIEnabled: false"
+    );
+  });
+</script>
+
+</body>
+</html>
