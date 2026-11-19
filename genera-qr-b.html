@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generatore QR segnaposto</title>
+<style>
+  body {
+    margin: 0;
+    padding: 24px 16px 48px;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #0b1a2b;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 { color: #f5d776; font-size: 26px; margin: 0 0 6px; text-align: center; }
+  p.sotto { margin: 0 0 20px; opacity: .85; text-align: center; max-width: 420px; }
+  label { display: block; font-size: 14px; margin: 14px 0 6px; opacity: .9; }
+  input[type=text] {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 18px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 0;
+  }
+  .box { width: 100%; max-width: 420px; }
+  button {
+    font-size: 17px;
+    padding: 12px 22px;
+    border: 0;
+    border-radius: 28px;
+    background: #f5d776;
+    color: #3a2a00;
+    font-weight: 700;
+    margin: 6px 6px 0 0;
+  }
+  button.sec { background: #2c4a6b; color: #fff; }
+  #qrWrap {
+    background: #fff;
+    padding: 12px;
+    border-radius: 12px;
+    margin-top: 22px;
+    display: inline-block;
+  }
+  #qr { display: block; width: 280px; height: 280px; }
+  #link {
+    margin-top: 14px;
+    font-size: 13px;
+    word-break: break-all;
+    opacity: .85;
+  }
+  #errore { color: #ffb4b4; margin-top: 14px; min-height: 18px; }
+  .centro { text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>QR del segnaposto</h1>
+<p class="sotto">Scrivi il nome dell'invitato: il QR code aprirà la pagina con quel nome in 3D.</p>
+
+<div class="box">
+  <label for="nome">Nome dell'invitato</label>
+  <input type="text" id="nome" value="Thomas" maxlength="18" autocomplete="off">
+
+  <label for="base">Indirizzo della pagina (di solito non serve cambiarlo)</label>
+  <input type="text" id="base" value="https://ciome89.github.io/segnaposto-natale/fase-b2-ancorato.html">
+
+  <div style="margin-top:14px">
+    <button id="genera">Crea QR</button>
+  </div>
+</div>
+
+<div class="centro">
+  <div id="qrWrap" style="display:none"><canvas id="qr" width="280" height="280"></canvas></div>
+  <div id="link"></div>
+  <div id="azioni" style="display:none; margin-top:10px">
+    <button id="scarica">Scarica PNG</button>
+    <button id="prova" class="sec">Apri la pagina</button>
+  </div>
+  <div id="errore"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>
+(function () {
+  var campoNome = document.getElementById('nome');
+  var campoBase = document.getElementById('base');
+  var canvas = document.getElementById('qr');
+  var errore = document.getElementById('errore');
+  var linkBox = document.getElementById('link');
+  var ultimoLink = '';
+
+  function costruisciLink() {
+    var nome = campoNome.value.trim();
+    var base = campoBase.value.trim();
+    if (!nome) throw new Error('Scrivi un nome.');
+    if (!base) throw new Error("Manca l'indirizzo della pagina.");
+    return base + '?nome=' + encodeURIComponent(nome);
+  }
+
+  function disegna(testo) {
+    if (typeof qrcode === 'undefined') {
+      throw new Error('Libreria QR non caricata. Controlla la connessione e ricarica la pagina.');
+    }
+    var qr = qrcode(0, 'M');
+    qr.addData(testo);
+    qr.make();
+    var n = qr.getModuleCount();
+    var margine = 4;
+    var scala = 12;
+    var lato = (n + margine * 2) * scala;
+    canvas.width = lato;
+    canvas.height = lato;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, lato, lato);
+    ctx.fillStyle = '#000000';
+    for (var r = 0; r < n; r++) {
+      for (var c = 0; c < n; c++) {
+        if (qr.isDark(r, c)) {
+          ctx.fillRect((c + margine) * scala, (r + margine) * scala, scala, scala);
+        }
+      }
+    }
+  }
+
+  function genera() {
+    errore.textContent = '';
+    try {
+      ultimoLink = costruisciLink();
+      disegna(ultimoLink);
+      document.getElementById('qrWrap').style.display = 'inline-block';
+      document.getElementById('azioni').style.display = 'block';
+      linkBox.textContent = ultimoLink;
+    } catch (e) {
+      errore.textContent = e.message || String(e);
+    }
+  }
+
+  document.getElementById('genera').addEventListener('click', genera);
+  campoNome.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') genera();
+  });
+
+  document.getElementById('scarica').addEventListener('click', function () {
+    var nomeFile = 'qr-' + campoNome.value.trim().replace(/[^A-Za-z0-9]+/g, '-').toLowerCase() + '.png';
+    var a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = nomeFile;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+
+  document.getElementById('prova').addEventListener('click', function () {
+    if (ultimoLink) window.open(ultimoLink, '_blank');
+  });
+
+  genera();
+})();
+</script>
+</body>
+</html>
