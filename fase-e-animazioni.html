@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Segnaposto di Natale - Trova il tuo posto</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #0b1a2b;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #fff;
+  }
+  #container {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  #start {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(circle at 50% 30%, #1d3b5c, #0b1a2b);
+  }
+  #start h1 { margin: 0; font-size: 28px; color: #f5d776; }
+  #start p { margin: 0; font-size: 16px; opacity: .9; max-width: 320px; }
+  #btn {
+    font-size: 18px;
+    padding: 14px 28px;
+    border: 0;
+    border-radius: 30px;
+    background: #f5d776;
+    color: #3a2a00;
+    font-weight: 700;
+  }
+  #msg {
+    min-height: 20px;
+    font-size: 14px;
+    color: #ffb4b4;
+    max-width: 320px;
+  }
+  #hint {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 14px;
+    z-index: 5;
+    text-align: center;
+    display: none;
+    pointer-events: none;
+  }
+  #hint span {
+    background: rgba(0,0,0,.55);
+    padding: 8px 14px;
+    border-radius: 18px;
+    font-size: 15px;
+  }
+  #info {
+    position: fixed;
+    left: 8px;
+    bottom: 8px;
+    z-index: 5;
+    font-size: 12px;
+    background: rgba(0,0,0,.45);
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="container"></div>
+<div id="hint"><span id="hintText">Inquadra una scheda</span></div>
+<div id="info"></div>
+
+<div id="start">
+  <h1>Buon Natale!</h1>
+  <p>Tocca il pulsante, consenti la fotocamera e inquadra le schede ai posti: quando compare il tuo nome, hai trovato il tuo posto!</p>
+  <button id="btn">Inizia</button>
+  <div id="msg"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/",
+    "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+import { MindARThree } from 'mindar-image-three';
+
+// ============================================================
+//  ELENCO DEI NOMI
+//  La posizione nell'elenco corrisponde al numero della scheda:
+//  il 1° nome è la scheda 1, il 2° nome la scheda 2, e così via.
+//  L'ordine deve essere lo stesso con cui hai creato il file schede.mind.
+// ============================================================
+const NOMI = [
+  { nome: 'THOMAS', effetto: 'slitta' },
+  { nome: 'LOREDANA', effetto: 'cometa' },
+  { nome: 'GIANCARLO', effetto: 'stelle' },
+  { nome: 'MARIKA', effetto: 'regali' },
+  { nome: 'LUDOVICA', effetto: 'slitta' },
+  { nome: 'ANGELA', effetto: 'cometa' },
+  { nome: 'EMILIO', effetto: 'stelle' },
+  { nome: 'CRISTIAN', effetto: 'regali' },
+  { nome: 'MASSIMILIANO', effetto: 'slitta' },
+  { nome: 'TATIANA', effetto: 'cometa' },
+  { nome: 'GIULIA', effetto: 'stelle' },
+  { nome: 'ALICE', effetto: 'regali' }
+];
+
+// Effetti disponibili: 'slitta' (slitta di Babbo Natale che attraversa),
+// 'cometa' (stella cometa con la coda), 'stelle' (arco di stelle che scorre),
+// 'regali' (pacchi che saltellano). Si può cambiare l'effetto di ogni nome.
+
+// Larghezza del nome rispetto alla larghezza della scheda (1.2 = 120%).
+const LARGHEZZA_NOME = 1.2;
+
+// Aggiungendo ?debug=1 all'indirizzo, in alto compare il numero della scheda riconosciuta
+const DEBUG = new URLSearchParams(window.location.search).get('debug') === '1';
+
+const msg = document.getElementById('msg');
+const hint = document.getElementById('hint');
+const hintText = document.getElementById('hintText');
+const info = document.getElementById('info');
+const startScreen = document.getElementById('start');
+
+function caricaFont() {
+  return new Promise((resolve, reject) => {
+    new FontLoader().load(
+      'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/fonts/helvetiker_bold.typeface.json',
+      resolve,
+      undefined,
+      () => reject(new Error('Impossibile caricare il carattere del nome.'))
+    );
+  });
+}
+
+// ---------- Pupazzo di neve ----------
+function creaPupazzo() {
+  const g = new THREE.Group();
+  const bianco = new THREE.MeshPhongMaterial({ color: 0xf4f7fb, shininess: 30 });
+  const nero = new THREE.MeshPhongMaterial({ color: 0x222222, shininess: 20 });
+  const arancio = new THREE.MeshPhongMaterial({ color: 0xff8c1a, shininess: 20 });
+  const rosso = new THREE.MeshPhongMaterial({ color: 0xc8102e, shininess: 20 });
+  const sfera = (r, y) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 16), bianco);
+    m.position.y = y;
+    g.add(m);
+  };
+  sfera(0.24, 0.24);
+  sfera(0.17, 0.60);
+  sfera(0.12, 0.84);
+  const piccola = (r, x, y, z, mat) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+  };
+  piccola(0.015, -0.04, 0.87, 0.11, nero);
+  piccola(0.015, 0.04, 0.87, 0.11, nero);
+  piccola(0.018, 0, 0.66, 0.16, nero);
+  piccola(0.018, 0, 0.54, 0.16, nero);
+  piccola(0.018, 0, 0.36, 0.21, nero);
+  const naso = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.09, 12), arancio);
+  naso.rotation.x = Math.PI / 2;
+  naso.position.set(0, 0.84, 0.16);
+  g.add(naso);
+  const sciarpa = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.025, 10, 24), rosso);
+  sciarpa.rotation.x = Math.PI / 2;
+  sciarpa.position.y = 0.74;
+  g.add(sciarpa);
+  const cappello = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.13, 16), nero);
+  cappello.position.y = 1.0;
+  g.add(cappello);
+  const tesa = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.02, 20), nero);
+  tesa.position.y = 0.945;
+  g.add(tesa);
+  return g;
+}
+
+// ---------- Albero di Natale ----------
+function creaAlbero(palline) {
+  const g = new THREE.Group();
+  const verde = new THREE.MeshPhongMaterial({ color: 0x2e8b57, shininess: 20 });
+  const marrone = new THREE.MeshPhongMaterial({ color: 0x7a5230, shininess: 10 });
+  const tronco = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.14, 12), marrone);
+  tronco.position.y = 0.07;
+  g.add(tronco);
+  const coni = [
+    { base: 0.12, R: 0.34, H: 0.42 },
+    { base: 0.34, R: 0.27, H: 0.38 },
+    { base: 0.56, R: 0.20, H: 0.34 }
+  ];
+  coni.forEach((c) => {
+    const m = new THREE.Mesh(new THREE.ConeGeometry(c.R, c.H, 20), verde);
+    m.position.y = c.base + c.H / 2;
+    g.add(m);
+  });
+  const decorazioni = [
+    { c: 0, y: 0.20, a: 0.4, col: 0xc8102e },
+    { c: 0, y: 0.17, a: 2.4, col: 0xf0d27a },
+    { c: 0, y: 0.24, a: 4.4, col: 0x5fa8ff },
+    { c: 1, y: 0.42, a: 1.2, col: 0xf0d27a },
+    { c: 1, y: 0.40, a: 3.4, col: 0xc8102e },
+    { c: 1, y: 0.46, a: 5.3, col: 0x5fa8ff },
+    { c: 2, y: 0.62, a: 0.8, col: 0xc8102e },
+    { c: 2, y: 0.64, a: 3.0, col: 0xf0d27a }
+  ];
+  decorazioni.forEach((d) => {
+    const c = coni[d.c];
+    const rad = c.R * (1 - (d.y - c.base) / c.H) + 0.01;
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(0.03, 10, 8),
+      new THREE.MeshPhongMaterial({ color: d.col, emissive: d.col, emissiveIntensity: 0.4, shininess: 80 })
+    );
+    m.position.set(Math.cos(d.a) * rad, d.y, Math.sin(d.a) * rad);
+    g.add(m);
+    palline.push(m);
+  });
+  const cima = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.05),
+    new THREE.MeshPhongMaterial({ color: 0xf0d27a, emissive: 0xf0d27a, emissiveIntensity: 0.5, shininess: 100 })
+  );
+  cima.position.y = 0.93;
+  g.add(cima);
+  palline.push(cima);
+  return g;
+}
+
+// ---------- Stella ----------
+function creaStella() {
+  const forma = new THREE.Shape();
+  const PUNTE = 5, R = 0.09, r = 0.04;
+  for (let k = 0; k < PUNTE * 2; k++) {
+    const rad = k % 2 === 0 ? R : r;
+    const a = Math.PI / 2 + k * Math.PI / PUNTE;
+    const x = Math.cos(a) * rad, y = Math.sin(a) * rad;
+    if (k === 0) forma.moveTo(x, y); else forma.lineTo(x, y);
+  }
+  forma.closePath();
+  const geo = new THREE.ExtrudeGeometry(forma, {
+    depth: 0.03,
+    bevelEnabled: true,
+    bevelThickness: 0.008,
+    bevelSize: 0.008,
+    bevelSegments: 2
+  });
+  geo.translate(0, 0, -0.015);
+  return new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+    color: 0xf0d27a,
+    specular: 0xffffff,
+    shininess: 100,
+    emissive: 0x6b4f10
+  }));
+}
+
+// ---------- Slitta di Babbo Natale ----------
+function creaSlitta() {
+  const g = new THREE.Group();
+  const rosso = new THREE.MeshPhongMaterial({ color: 0xc8102e, shininess: 40 });
+  const oro = new THREE.MeshPhongMaterial({ color: 0xd4b05a, specular: 0xffffff, shininess: 80 });
+  const pelle = new THREE.MeshPhongMaterial({ color: 0xf2c9a5, shininess: 10 });
+  const bianco = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 10 });
+  const marrone = new THREE.MeshPhongMaterial({ color: 0x7a5230, shininess: 10 });
+  const box = (w, h, d, mat, x, y, z, rz) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    if (rz) m.rotation.z = rz;
+    g.add(m);
+    return m;
+  };
+  const sfera = (r, mat, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+    return m;
+  };
+  box(0.24, 0.06, 0.12, rosso, 0, 0.06, 0);          // corpo
+  box(0.03, 0.10, 0.12, rosso, -0.11, 0.11, 0);      // schienale
+  box(0.03, 0.07, 0.12, rosso, 0.12, 0.09, 0, -0.5); // fronte
+  for (const z of [-0.05, 0.05]) {
+    box(0.30, 0.012, 0.012, oro, 0, 0.005, z);       // pattini
+    box(0.07, 0.012, 0.012, oro, 0.16, 0.03, z, 0.6);
+    box(0.012, 0.04, 0.012, oro, -0.07, 0.03, z);    // sostegni
+    box(0.012, 0.04, 0.012, oro, 0.07, 0.03, z);
+  }
+  sfera(0.045, marrone, -0.10, 0.12, 0);             // sacco
+  sfera(0.05, rosso, -0.02, 0.13, 0);                // Babbo Natale
+  sfera(0.03, pelle, -0.02, 0.19, 0);
+  sfera(0.02, bianco, 0.005, 0.175, 0);              // barba
+  const cappello = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.06, 12), rosso);
+  cappello.position.set(-0.02, 0.24, 0);
+  g.add(cappello);
+  sfera(0.012, bianco, -0.02, 0.275, 0);
+  return g;
+}
+
+// ---------- Pacco regalo ----------
+function creaRegalo(colore) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshPhongMaterial({ color: colore, shininess: 40 });
+  const oro = new THREE.MeshPhongMaterial({ color: 0xf0d27a, shininess: 80 });
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), mat));
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.104, 0.104, 0.02), oro));
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.104, 0.104), oro));
+  return g;
+}
+
+// ---------- Effetti animati in movimento ----------
+function creaEffetto(tipo, dim) {
+  const gruppo = new THREE.Group();
+  gruppo.position.z = 0.3;
+  const yAlto = dim.altezzaNome / 2 + 0.55;
+  const ESTENSIONE = dim.metaLarghezza + 0.7;
+
+  if (tipo === 'slitta') {
+    const s = creaSlitta();
+    s.scale.setScalar(1.6);
+    gruppo.add(s);
+    return {
+      gruppo,
+      aggiorna(t) {
+        const u = (t % 9) / 7;            // 7 secondi di volo, poi pausa
+        if (u > 1) { s.visible = false; return; }
+        s.visible = true;
+        s.position.x = -ESTENSIONE + 2 * ESTENSIONE * u;
+        s.position.y = yAlto + Math.sin(u * Math.PI) * 0.12 + Math.sin(t * 4) * 0.015;
+        s.rotation.z = Math.cos(u * Math.PI) * 0.12;
+      }
+    };
+  }
+
+  if (tipo === 'cometa') {
+    const testa = creaStella();
+    testa.scale.setScalar(1.2);
+    gruppo.add(testa);
+    const N = 36;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    for (let k = 0; k < N; k++) {
+      const f = Math.pow(1 - k / N, 1.6);
+      col[k * 3] = 1.0 * f;
+      col[k * 3 + 1] = 0.82 * f;
+      col[k * 3 + 2] = 0.45 * f;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const coda = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 0.07,
+      map: dim.tex,
+      vertexColors: true,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    }));
+    coda.frustumCulled = false;
+    gruppo.add(coda);
+    const percorso = (u) => ({
+      x: ESTENSIONE - 2 * ESTENSIONE * u,
+      y: yAlto + 0.3 - 0.5 * u + 0.2 * Math.sin(u * Math.PI)
+    });
+    return {
+      gruppo,
+      aggiorna(t) {
+        const u = (t % 8) / 5.5;          // 5,5 secondi di volo, poi pausa
+        testa.visible = u <= 1;
+        coda.visible = u <= 1.25;
+        const h = percorso(Math.min(u, 1));
+        testa.position.set(h.x, h.y, 0);
+        testa.rotation.y = t * 2;
+        testa.material.emissiveIntensity = 0.6 + 0.4 * Math.sin(t * 8);
+        const p = geo.attributes.position.array;
+        for (let k = 0; k < N; k++) {
+          const uk = u - k * 0.012;
+          if (uk < 0 || uk > 1) {
+            p[k * 3] = 0; p[k * 3 + 1] = -100; p[k * 3 + 2] = 0;
+          } else {
+            const q = percorso(uk);
+            p[k * 3] = q.x; p[k * 3 + 1] = q.y; p[k * 3 + 2] = 0;
+          }
+        }
+        geo.attributes.position.needsUpdate = true;
+      }
+    };
+  }
+
+  if (tipo === 'stelle') {
+    const stelle = [];
+    for (let i = 0; i < 5; i++) {
+      const st = creaStella();
+      gruppo.add(st);
+      stelle.push(st);
+    }
+    const Rx = dim.metaLarghezza + 0.2;
+    const Ry = 0.5;
+    const cy = dim.altezzaNome / 2 + 0.12;
+    return {
+      gruppo,
+      aggiorna(t) {
+        for (let i = 0; i < stelle.length; i++) {
+          const ph = (t * 0.3 + i / stelle.length) % 1;
+          const a = ph * Math.PI;
+          stelle[i].position.set(-Math.cos(a) * Rx, cy + Math.sin(a) * Ry, 0);
+          stelle[i].scale.setScalar(0.05 + 0.75 * Math.sin(a));
+          stelle[i].rotation.y = t * 2 + i;
+          stelle[i].material.emissiveIntensity = 0.6 + 0.4 * Math.sin(t * 3 + i);
+        }
+      }
+    };
+  }
+
+  if (tipo === 'regali') {
+    const colori = [0xc8102e, 0x2e8b57, 0x3a7bd5, 0xd4b05a];
+    const regali = colori.map((c, i) => {
+      const r = creaRegalo(c);
+      r.position.x = (i - 1.5) * dim.metaLarghezza * 0.5;
+      gruppo.add(r);
+      return r;
+    });
+    const base = -dim.altezzaNome / 2 - 0.17;
+    return {
+      gruppo,
+      aggiorna(t) {
+        for (let i = 0; i < regali.length; i++) {
+          regali[i].position.y = base + Math.abs(Math.sin(t * 2.6 + i * 0.8)) * 0.14;
+          regali[i].rotation.y = t * 1.5 + i;
+        }
+      }
+    };
+  }
+
+  return null;
+}
+
+async function avvia() {
+  const mindarThree = new MindARThree({
+    container: document.getElementById('container'),
+    imageTargetSrc: './schede.mind',
+    uiLoading: 'no',
+    uiScanning: 'no',
+    uiError: 'no',
+    filterMinCF: 0.001,
+    filterBeta: 0.01,
+    missTolerance: 6,
+    warmupTolerance: 4
+  });
+  const { renderer, scene, camera } = mindarThree;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const luce1 = new THREE.DirectionalLight(0xfff2cc, 1.6);
+  luce1.position.set(1, 2, 3);
+  scene.add(luce1);
+  const luce2 = new THREE.DirectionalLight(0xffd27a, 0.8);
+  luce2.position.set(-2, -1, 2);
+  scene.add(luce2);
+
+  const font = await caricaFont();
+
+  // Texture del fiocco di neve (condivisa)
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const cx = cv.getContext('2d');
+  const gr = cx.createRadialGradient(32, 32, 0, 32, 32, 30);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.5, 'rgba(255,255,255,0.8)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  cx.fillStyle = gr;
+  cx.fillRect(0, 0, 64, 64);
+  const texturaFiocco = new THREE.CanvasTexture(cv);
+
+  const materialeNome = new THREE.MeshPhongMaterial({
+    color: 0xc8102e,
+    specular: 0xffb8b8,
+    shininess: 60
+  });
+
+  const NUM = 420;
+  const X = 1.6, Y0 = -0.3, Y1 = 1.1, Z0 = 0.02, Z1 = 0.7;
+
+  // Una scheda = un ancoraggio con nome, stella, pupazzo, albero e neve
+  const schede = [];
+
+  NOMI.forEach((voce, indice) => {
+    const nome = voce.nome;
+    const anchor = mindarThree.addAnchor(indice);
+    const st = { visibile: false, stella: null, pupazzo: null, albero: null, palline: [] };
+
+    const gruppo = new THREE.Group();
+    gruppo.position.set(0, 0, 0.18);
+    anchor.group.add(gruppo);
+    st.gruppo = gruppo;
+
+    // Nome 3D
+    const geo = new TextGeometry(nome, {
+      font: font,
+      size: 0.5,
+      height: 0.18,
+      curveSegments: 6,
+      bevelEnabled: true,
+      bevelThickness: 0.02,
+      bevelSize: 0.015,
+      bevelSegments: 3
+    });
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    const larghezza = bb.max.x - bb.min.x;
+    const altezzaOrig = bb.max.y - bb.min.y;
+    geo.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -(bb.min.z + bb.max.z) / 2);
+    const mesh = new THREE.Mesh(geo, materialeNome);
+    const SCALA_NOME = LARGHEZZA_NOME / larghezza;
+    mesh.scale.setScalar(SCALA_NOME);
+    gruppo.add(mesh);
+
+    const altezzaNome = altezzaOrig * SCALA_NOME;
+
+    // Stella sopra il nome
+    st.stella = creaStella();
+    st.stella.position.set(0, altezzaNome / 2 + 0.16, 0);
+    gruppo.add(st.stella);
+
+    // Pupazzo a destra, albero a sinistra
+    const metaLarghezza = (larghezza * SCALA_NOME) / 2;
+    const hOgg = Math.max(altezzaNome * 1.6, 0.5);
+    const spazio = metaLarghezza + hOgg * 0.4 + 0.06;
+    st.pupazzo = creaPupazzo();
+    st.pupazzo.scale.setScalar(hOgg);
+    st.pupazzo.position.set(spazio, -altezzaNome / 2, 0);
+    gruppo.add(st.pupazzo);
+    st.albero = creaAlbero(st.palline);
+    st.albero.scale.setScalar(hOgg);
+    st.albero.position.set(-spazio, -altezzaNome / 2, 0);
+    gruppo.add(st.albero);
+
+    // Effetto animato in movimento (diverso a seconda del nome)
+    st.fx = creaEffetto(voce.effetto, { metaLarghezza, altezzaNome, tex: texturaFiocco });
+    if (st.fx) anchor.group.add(st.fx.gruppo);
+
+    // Neve
+    const pos = new Float32Array(NUM * 3);
+    st.vel = new Float32Array(NUM);
+    st.fase = new Float32Array(NUM);
+    for (let i = 0; i < NUM; i++) {
+      pos[i * 3]     = (Math.random() * 2 - 1) * X;
+      pos[i * 3 + 1] = Y0 + Math.random() * (Y1 - Y0);
+      pos[i * 3 + 2] = Z0 + Math.random() * (Z1 - Z0);
+      st.vel[i] = 0.15 + Math.random() * 0.25;
+      st.fase[i] = Math.random() * Math.PI * 2;
+    }
+    st.geoNeve = new THREE.BufferGeometry();
+    st.geoNeve.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    anchor.group.add(new THREE.Points(st.geoNeve, new THREE.PointsMaterial({
+      size: 0.055,
+      map: texturaFiocco,
+      transparent: true,
+      depthWrite: false
+    })));
+
+    anchor.onTargetFound = () => {
+      st.visibile = true;
+      if (DEBUG) {
+        hintText.textContent = 'Scheda ' + (indice + 1) + ': ' + nome;
+        hint.style.display = 'block';
+      } else {
+        hint.style.display = 'none';
+      }
+    };
+    anchor.onTargetLost = () => {
+      st.visibile = false;
+      hintText.textContent = 'Inquadra una scheda';
+      hint.style.display = 'block';
+    };
+
+    schede.push(st);
+  });
+
+  await mindarThree.start();
+  startScreen.style.display = 'none';
+  hint.style.display = 'block';
+  info.style.display = 'block';
+
+  const clock = new THREE.Clock();
+  let frame = 0;
+  let ultimo = performance.now();
+
+  renderer.setAnimationLoop(() => {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+
+    for (const st of schede) {
+      if (!st.visibile) continue;
+      if (st.fx) st.fx.aggiorna(t);
+
+      st.gruppo.rotation.z = Math.sin(t * 0.7) * 0.05;
+      st.gruppo.position.y = Math.sin(t * 0.9) * 0.02;
+
+      st.stella.rotation.y = t * 1.2;
+      st.stella.scale.setScalar(1 + 0.12 * Math.sin(t * 3));
+      st.stella.material.emissiveIntensity = 0.6 + 0.4 * Math.sin(t * 3);
+
+      st.pupazzo.rotation.y = Math.sin(t * 0.8) * 0.35;
+      st.albero.rotation.y = Math.sin(t * 0.6 + 1) * 0.3;
+      for (let i = 0; i < st.palline.length; i++) {
+        st.palline[i].material.emissiveIntensity = 0.35 + 0.35 * Math.sin(t * 2.5 + i);
+      }
+
+      const p = st.geoNeve.attributes.position.array;
+      for (let i = 0; i < NUM; i++) {
+        p[i * 3 + 1] -= st.vel[i] * dt;
+        p[i * 3] += Math.sin(t + st.fase[i]) * 0.05 * dt;
+        if (p[i * 3 + 1] < Y0) {
+          p[i * 3 + 1] = Y1;
+          p[i * 3] = (Math.random() * 2 - 1) * X;
+        }
+      }
+      st.geoNeve.attributes.position.needsUpdate = true;
+    }
+
+    renderer.render(scene, camera);
+
+    frame++;
+    const ora = performance.now();
+    if (ora - ultimo >= 1000) {
+      info.textContent = frame + ' fps';
+      frame = 0;
+      ultimo = ora;
+    }
+  });
+}
+
+document.getElementById('btn').addEventListener('click', async () => {
+  msg.textContent = '';
+  document.getElementById('btn').disabled = true;
+  try {
+    await avvia();
+  } catch (e) {
+    document.getElementById('btn').disabled = false;
+    let testo = 'Errore: ' + (e && e.message ? e.message : e);
+    if (e && e.name === 'NotAllowedError') {
+      testo = 'Permesso alla fotocamera negato. Consentilo nelle impostazioni del browser e ricarica la pagina.';
+    }
+    msg.textContent = testo;
+  }
+});
+</script>
+</body>
+</html>
