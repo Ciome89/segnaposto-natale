@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Segnaposto di Natale - Trova il tuo posto</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #0b1a2b;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #fff;
+  }
+  #container {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  #start {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(circle at 50% 30%, #1d3b5c, #0b1a2b);
+  }
+  #start h1 { margin: 0; font-size: 28px; color: #f5d776; }
+  #start p { margin: 0; font-size: 16px; opacity: .9; max-width: 320px; }
+  #btn {
+    font-size: 18px;
+    padding: 14px 28px;
+    border: 0;
+    border-radius: 30px;
+    background: #f5d776;
+    color: #3a2a00;
+    font-weight: 700;
+  }
+  #msg {
+    min-height: 20px;
+    font-size: 14px;
+    color: #ffb4b4;
+    max-width: 320px;
+  }
+  #hint {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 14px;
+    z-index: 5;
+    text-align: center;
+    display: none;
+    pointer-events: none;
+  }
+  #hint span {
+    background: rgba(0,0,0,.55);
+    padding: 8px 14px;
+    border-radius: 18px;
+    font-size: 15px;
+  }
+  #info {
+    position: fixed;
+    left: 8px;
+    bottom: 8px;
+    z-index: 5;
+    font-size: 12px;
+    background: rgba(0,0,0,.45);
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="container"></div>
+<div id="hint"><span id="hintText">Inquadra una scheda</span></div>
+<div id="info"></div>
+
+<div id="start">
+  <h1>Buon Natale!</h1>
+  <p>Tocca il pulsante, consenti la fotocamera e inquadra le schede ai posti: quando compare il tuo nome, hai trovato il tuo posto!</p>
+  <button id="btn">Inizia</button>
+  <div id="msg"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/",
+    "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+import { MindARThree } from 'mindar-image-three';
+
+// ============================================================
+//  ELENCO DEI NOMI
+//  La posizione nell'elenco corrisponde al numero della scheda:
+//  il 1° nome è la scheda 1, il 2° nome la scheda 2, e così via.
+//  L'ordine deve essere lo stesso con cui hai creato il file schede12.mind.
+// ============================================================
+const NOMI = [
+  { nome: 'THOMAS', effetto: 'renna', fine: 'albero' },
+  { nome: 'LOREDANA', effetto: 'cadenti', fine: 'candela' },
+  { nome: 'GIANCARLO', effetto: 'fuochi', fine: 'pupazzo' },
+  { nome: 'MARIKA', effetto: 'cadenti', fine: 'candela' },
+  { nome: 'LUDOVICA', effetto: 'slitta', fine: 'regalo' },
+  { nome: 'ANGELA', effetto: 'cadenti', fine: 'candela' },
+  { nome: 'EMILIO', effetto: 'fuochi', fine: 'pupazzo' },
+  { nome: 'CRISTIAN', effetto: 'renna', fine: 'albero' },
+  { nome: 'MASSIMILIANO', effetto: 'fuochi', fine: 'pupazzo' },
+  { nome: 'TATIANA', effetto: 'renna', fine: 'albero' },
+  { nome: 'GIULIA', effetto: 'slitta', fine: 'regalo' },
+  { nome: 'ALICE', effetto: 'slitta', fine: 'regalo' }
+];
+
+// effetto = animazione in movimento nel cielo sopra il nome:
+//   'slitta'  slitta di Babbo Natale che passa
+//   'fuochi'  fuochi d'artificio che esplodono
+//   'renna'   renna che vola
+//   'cadenti' stelle cadenti
+// fine = oggetto posto alla fine del nome (a destra):
+//   'regalo', 'pupazzo', 'albero', 'candela'
+
+// Larghezza del nome rispetto alla larghezza della scheda (0.8 = 80%)
+const LARGHEZZA_NOME = 0.8;
+// Altezza degli oggetti a fine nome, in unità di larghezza della scheda
+const ALTEZZA_FINE = 0.4;
+
+// Aggiungendo ?debug=1 all'indirizzo, in alto compare il numero della scheda riconosciuta
+const DEBUG = new URLSearchParams(window.location.search).get('debug') === '1';
+
+const msg = document.getElementById('msg');
+const hint = document.getElementById('hint');
+const hintText = document.getElementById('hintText');
+const info = document.getElementById('info');
+const startScreen = document.getElementById('start');
+
+function caricaFont() {
+  return new Promise((resolve, reject) => {
+    new FontLoader().load(
+      'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/fonts/helvetiker_bold.typeface.json',
+      resolve,
+      undefined,
+      () => reject(new Error('Impossibile caricare il carattere del nome.'))
+    );
+  });
+}
+
+// ---------- Pupazzo di neve ----------
+function creaPupazzo() {
+  const g = new THREE.Group();
+  const bianco = new THREE.MeshPhongMaterial({ color: 0xf4f7fb, shininess: 30 });
+  const nero = new THREE.MeshPhongMaterial({ color: 0x222222, shininess: 20 });
+  const arancio = new THREE.MeshPhongMaterial({ color: 0xff8c1a, shininess: 20 });
+  const rosso = new THREE.MeshPhongMaterial({ color: 0xc8102e, shininess: 20 });
+  const sfera = (r, y) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 16), bianco);
+    m.position.y = y;
+    g.add(m);
+  };
+  sfera(0.24, 0.24);
+  sfera(0.17, 0.60);
+  sfera(0.12, 0.84);
+  const piccola = (r, x, y, z, mat) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+  };
+  piccola(0.015, -0.04, 0.87, 0.11, nero);
+  piccola(0.015, 0.04, 0.87, 0.11, nero);
+  piccola(0.018, 0, 0.66, 0.16, nero);
+  piccola(0.018, 0, 0.54, 0.16, nero);
+  piccola(0.018, 0, 0.36, 0.21, nero);
+  const naso = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.09, 12), arancio);
+  naso.rotation.x = Math.PI / 2;
+  naso.position.set(0, 0.84, 0.16);
+  g.add(naso);
+  const sciarpa = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.025, 10, 24), rosso);
+  sciarpa.rotation.x = Math.PI / 2;
+  sciarpa.position.y = 0.74;
+  g.add(sciarpa);
+  const cappello = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.13, 16), nero);
+  cappello.position.y = 1.0;
+  g.add(cappello);
+  const tesa = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.02, 20), nero);
+  tesa.position.y = 0.945;
+  g.add(tesa);
+  return g;
+}
+
+// ---------- Albero di Natale ----------
+function creaAlbero(palline) {
+  const g = new THREE.Group();
+  const verde = new THREE.MeshPhongMaterial({ color: 0x2e8b57, shininess: 20 });
+  const marrone = new THREE.MeshPhongMaterial({ color: 0x7a5230, shininess: 10 });
+  const tronco = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.14, 12), marrone);
+  tronco.position.y = 0.07;
+  g.add(tronco);
+  const coni = [
+    { base: 0.12, R: 0.34, H: 0.42 },
+    { base: 0.34, R: 0.27, H: 0.38 },
+    { base: 0.56, R: 0.20, H: 0.34 }
+  ];
+  coni.forEach((c) => {
+    const m = new THREE.Mesh(new THREE.ConeGeometry(c.R, c.H, 20), verde);
+    m.position.y = c.base + c.H / 2;
+    g.add(m);
+  });
+  const decorazioni = [
+    { c: 0, y: 0.20, a: 0.4, col: 0xc8102e },
+    { c: 0, y: 0.17, a: 2.4, col: 0xf0d27a },
+    { c: 0, y: 0.24, a: 4.4, col: 0x5fa8ff },
+    { c: 1, y: 0.42, a: 1.2, col: 0xf0d27a },
+    { c: 1, y: 0.40, a: 3.4, col: 0xc8102e },
+    { c: 1, y: 0.46, a: 5.3, col: 0x5fa8ff },
+    { c: 2, y: 0.62, a: 0.8, col: 0xc8102e },
+    { c: 2, y: 0.64, a: 3.0, col: 0xf0d27a }
+  ];
+  decorazioni.forEach((d) => {
+    const c = coni[d.c];
+    const rad = c.R * (1 - (d.y - c.base) / c.H) + 0.01;
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(0.03, 10, 8),
+      new THREE.MeshPhongMaterial({ color: d.col, emissive: d.col, emissiveIntensity: 0.4, shininess: 80 })
+    );
+    m.position.set(Math.cos(d.a) * rad, d.y, Math.sin(d.a) * rad);
+    g.add(m);
+    palline.push(m);
+  });
+  const cima = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.05),
+    new THREE.MeshPhongMaterial({ color: 0xf0d27a, emissive: 0xf0d27a, emissiveIntensity: 0.5, shininess: 100 })
+  );
+  cima.position.y = 0.93;
+  g.add(cima);
+  palline.push(cima);
+  return g;
+}
+
+// ---------- Stella ----------
+function creaStella() {
+  const forma = new THREE.Shape();
+  const PUNTE = 5, R = 0.09, r = 0.04;
+  for (let k = 0; k < PUNTE * 2; k++) {
+    const rad = k % 2 === 0 ? R : r;
+    const a = Math.PI / 2 + k * Math.PI / PUNTE;
+    const x = Math.cos(a) * rad, y = Math.sin(a) * rad;
+    if (k === 0) forma.moveTo(x, y); else forma.lineTo(x, y);
+  }
+  forma.closePath();
+  const geo = new THREE.ExtrudeGeometry(forma, {
+    depth: 0.03,
+    bevelEnabled: true,
+    bevelThickness: 0.008,
+    bevelSize: 0.008,
+    bevelSegments: 2
+  });
+  geo.translate(0, 0, -0.015);
+  return new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+    color: 0xf0d27a,
+    specular: 0xffffff,
+    shininess: 100,
+    emissive: 0x6b4f10
+  }));
+}
+
+// ---------- Slitta di Babbo Natale ----------
+function creaSlitta() {
+  const g = new THREE.Group();
+  const rosso = new THREE.MeshPhongMaterial({ color: 0xc8102e, shininess: 40 });
+  const oro = new THREE.MeshPhongMaterial({ color: 0xd4b05a, specular: 0xffffff, shininess: 80 });
+  const pelle = new THREE.MeshPhongMaterial({ color: 0xf2c9a5, shininess: 10 });
+  const bianco = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 10 });
+  const marrone = new THREE.MeshPhongMaterial({ color: 0x7a5230, shininess: 10 });
+  const box = (w, h, d, mat, x, y, z, rz) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    if (rz) m.rotation.z = rz;
+    g.add(m);
+    return m;
+  };
+  const sfera = (r, mat, x, y, z) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+    return m;
+  };
+  box(0.24, 0.06, 0.12, rosso, 0, 0.06, 0);          // corpo
+  box(0.03, 0.10, 0.12, rosso, -0.11, 0.11, 0);      // schienale
+  box(0.03, 0.07, 0.12, rosso, 0.12, 0.09, 0, -0.5); // fronte
+  for (const z of [-0.05, 0.05]) {
+    box(0.30, 0.012, 0.012, oro, 0, 0.005, z);       // pattini
+    box(0.07, 0.012, 0.012, oro, 0.16, 0.03, z, 0.6);
+    box(0.012, 0.04, 0.012, oro, -0.07, 0.03, z);    // sostegni
+    box(0.012, 0.04, 0.012, oro, 0.07, 0.03, z);
+  }
+  sfera(0.045, marrone, -0.10, 0.12, 0);             // sacco
+  sfera(0.05, rosso, -0.02, 0.13, 0);                // Babbo Natale
+  sfera(0.03, pelle, -0.02, 0.19, 0);
+  sfera(0.02, bianco, 0.005, 0.175, 0);              // barba
+  const cappello = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.06, 12), rosso);
+  cappello.position.set(-0.02, 0.24, 0);
+  g.add(cappello);
+  sfera(0.012, bianco, -0.02, 0.275, 0);
+  return g;
+}
+
+// ---------- Pacco regalo ----------
+function creaRegalo(colore) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshPhongMaterial({ color: colore, shininess: 40 });
+  const oro = new THREE.MeshPhongMaterial({ color: 0xf0d27a, shininess: 80 });
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), mat));
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.104, 0.104, 0.02), oro));
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.104, 0.104), oro));
+  return g;
+}
+
+// ---------- Candela ----------
+function creaCandela(tex) {
+  const g = new THREE.Group();
+  const crema = new THREE.MeshPhongMaterial({ color: 0xf6ecd2, shininess: 20 });
+  const oro = new THREE.MeshPhongMaterial({ color: 0xd4b05a, specular: 0xffffff, shininess: 80 });
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.04, 20), oro);
+  base.position.y = 0.02;
+  g.add(base);
+  const corpo = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.7, 16), crema);
+  corpo.position.y = 0.39;
+  g.add(corpo);
+  const stoppino = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.06, 6), new THREE.MeshPhongMaterial({ color: 0x222222 }));
+  stoppino.position.y = 0.77;
+  g.add(stoppino);
+  const fiamma = new THREE.Group();
+  fiamma.position.y = 0.86;
+  const est = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 12),
+    new THREE.MeshPhongMaterial({ color: 0xff8c1a, emissive: 0xff8c1a, emissiveIntensity: 0.9 }));
+  fiamma.add(est);
+  const intr = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.09, 12),
+    new THREE.MeshPhongMaterial({ color: 0xffe08a, emissive: 0xffe08a, emissiveIntensity: 1.0 }));
+  intr.position.y = -0.02;
+  fiamma.add(intr);
+  const alone = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, color: 0xffaa33, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false
+  }));
+  alone.scale.set(0.4, 0.4, 1);
+  fiamma.add(alone);
+  g.add(fiamma);
+  return { gruppo: g, fiamma, alone };
+}
+
+// ---------- Oggetto alla fine del nome ----------
+function creaFine(tipo, H, tex) {
+  if (tipo === 'regalo') {
+    const g = new THREE.Group();
+    const dim = 0.22;
+    const sc = dim / 0.1;
+    const inner = creaRegalo(0xc8102e);
+    inner.scale.setScalar(sc);
+    g.add(inner);
+    return {
+      gruppo: g,
+      larghezza: dim,
+      aggiorna(t) {
+        inner.position.y = 0.05 * sc + Math.abs(Math.sin(t * 2.4)) * 0.04;
+        inner.rotation.y = Math.sin(t * 1.2) * 0.5;
+      }
+    };
+  }
+  if (tipo === 'pupazzo') {
+    const g = new THREE.Group();
+    const p = creaPupazzo();
+    const sc = H / 1.06;
+    p.scale.setScalar(sc);
+    g.add(p);
+    return {
+      gruppo: g,
+      larghezza: 0.5 * sc,
+      aggiorna(t) { p.rotation.y = Math.sin(t * 0.8) * 0.35; }
+    };
+  }
+  if (tipo === 'albero') {
+    const g = new THREE.Group();
+    const palline = [];
+    const a = creaAlbero(palline);
+    a.scale.setScalar(H);
+    g.add(a);
+    return {
+      gruppo: g,
+      larghezza: 0.7 * H,
+      aggiorna(t) {
+        a.rotation.y = Math.sin(t * 0.6 + 1) * 0.3;
+        for (let i = 0; i < palline.length; i++) {
+          palline[i].material.emissiveIntensity = 0.35 + 0.35 * Math.sin(t * 2.5 + i);
+        }
+      }
+    };
+  }
+  if (tipo === 'candela') {
+    const g = new THREE.Group();
+    const c = creaCandela(tex);
+    c.gruppo.scale.setScalar(H);
+    g.add(c.gruppo);
+    return {
+      gruppo: g,
+      larghezza: 0.26 * H,
+      aggiorna(t) {
+        const f = 1 + 0.12 * Math.sin(t * 13) + 0.08 * Math.sin(t * 7.3);
+        c.fiamma.scale.set(1, f, 1);
+        c.alone.material.opacity = 0.7 + 0.3 * Math.sin(t * 9);
+      }
+    };
+  }
+  return null;
+}
+
+// ---------- Renna ----------
+function creaRenna() {
+  const g = new THREE.Group();
+  const marrone = new THREE.MeshPhongMaterial({ color: 0x8b5a2b, shininess: 15 });
+  const chiaro = new THREE.MeshPhongMaterial({ color: 0xe8d8b8, shininess: 10 });
+  const corna = new THREE.MeshPhongMaterial({ color: 0x5a3a1a, shininess: 10 });
+  const rosso = new THREE.MeshPhongMaterial({ color: 0xff2a2a, emissive: 0xff2a2a, emissiveIntensity: 0.8 });
+  const corpo = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 12), marrone);
+  corpo.scale.set(1.6, 0.85, 0.8);
+  corpo.position.set(0, 0.13, 0);
+  g.add(corpo);
+  const collo = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.034, 0.11, 10), marrone);
+  collo.position.set(0.09, 0.19, 0);
+  collo.rotation.z = -0.6;
+  g.add(collo);
+  const testa = new THREE.Mesh(new THREE.SphereGeometry(0.034, 12, 10), marrone);
+  testa.scale.set(1.3, 1, 0.9);
+  testa.position.set(0.145, 0.245, 0);
+  g.add(testa);
+  const naso = new THREE.Mesh(new THREE.SphereGeometry(0.017, 10, 8), rosso);
+  naso.position.set(0.19, 0.24, 0);
+  g.add(naso);
+  const coda = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), chiaro);
+  coda.position.set(-0.115, 0.15, 0);
+  g.add(coda);
+  for (const z of [-0.018, 0.018]) {
+    const orecchio = new THREE.Mesh(new THREE.ConeGeometry(0.01, 0.035, 6), marrone);
+    orecchio.position.set(0.13, 0.28, z * 1.6);
+    orecchio.rotation.x = z > 0 ? 0.7 : -0.7;
+    g.add(orecchio);
+    const palo = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.007, 0.09, 6), corna);
+    palo.position.set(0.12, 0.315, z);
+    palo.rotation.z = 0.35;
+    g.add(palo);
+    const ramo1 = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.005, 0.05, 6), corna);
+    ramo1.position.set(0.15, 0.335, z);
+    ramo1.rotation.z = -0.5;
+    g.add(ramo1);
+    const ramo2 = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.005, 0.045, 6), corna);
+    ramo2.position.set(0.105, 0.345, z);
+    ramo2.rotation.z = 0.9;
+    g.add(ramo2);
+  }
+  const gambe = [];
+  const posGambe = [[0.07, 0.018, 0], [0.07, -0.018, 0.5], [-0.07, 0.018, 0.5], [-0.07, -0.018, 0]];
+  posGambe.forEach((p) => {
+    const gamba = new THREE.Group();
+    gamba.position.set(p[0], 0.1, p[1]);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.009, 0.1, 8), marrone);
+    m.position.y = -0.05;
+    gamba.add(m);
+    g.add(gamba);
+    gambe.push({ gamba, fase: p[2] * Math.PI * 2 });
+  });
+  return {
+    gruppo: g,
+    anima(t) {
+      gambe.forEach((o) => { o.gamba.rotation.z = Math.sin(t * 9 + o.fase) * 0.7; });
+    }
+  };
+}
+
+// ---------- Effetti animati in movimento ----------
+function creaEffetto(tipo, dim) {
+  const gruppo = new THREE.Group();
+  gruppo.position.z = 0.3;
+  const yAlto = dim.altezzaNome / 2 + 0.55;
+  const ESTENSIONE = dim.metaLarghezza + 0.7;
+
+  if (tipo === 'slitta') {
+    const s = creaSlitta();
+    s.scale.setScalar(1.6);
+    gruppo.add(s);
+    return {
+      gruppo,
+      aggiorna(t) {
+        const u = (t % 9) / 7;            // 7 secondi di volo, poi pausa
+        if (u > 1) { s.visible = false; return; }
+        s.visible = true;
+        s.position.x = -ESTENSIONE + 2 * ESTENSIONE * u;
+        s.position.y = yAlto + Math.sin(u * Math.PI) * 0.12 + Math.sin(t * 4) * 0.015;
+        s.rotation.z = Math.cos(u * Math.PI) * 0.12;
+      }
+    };
+  }
+
+  if (tipo === 'cometa') {
+    const testa = creaStella();
+    testa.scale.setScalar(1.2);
+    gruppo.add(testa);
+    const N = 36;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    for (let k = 0; k < N; k++) {
+      const f = Math.pow(1 - k / N, 1.6);
+      col[k * 3] = 1.0 * f;
+      col[k * 3 + 1] = 0.82 * f;
+      col[k * 3 + 2] = 0.45 * f;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const coda = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 14,
+      sizeAttenuation: false,
+      map: dim.tex,
+      vertexColors: true,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    }));
+    coda.frustumCulled = false;
+    gruppo.add(coda);
+    const percorso = (u) => ({
+      x: ESTENSIONE - 2 * ESTENSIONE * u,
+      y: yAlto + 0.3 - 0.5 * u + 0.2 * Math.sin(u * Math.PI)
+    });
+    return {
+      gruppo,
+      aggiorna(t) {
+        const u = (t % 8) / 5.5;          // 5,5 secondi di volo, poi pausa
+        testa.visible = u <= 1;
+        coda.visible = u <= 1.25;
+        const h = percorso(Math.min(u, 1));
+        testa.position.set(h.x, h.y, 0);
+        testa.rotation.y = t * 2;
+        testa.material.emissiveIntensity = 0.6 + 0.4 * Math.sin(t * 8);
+        const p = geo.attributes.position.array;
+        for (let k = 0; k < N; k++) {
+          const uk = u - k * 0.012;
+          if (uk < 0 || uk > 1) {
+            p[k * 3] = 0; p[k * 3 + 1] = -100; p[k * 3 + 2] = 0;
+          } else {
+            const q = percorso(uk);
+            p[k * 3] = q.x; p[k * 3 + 1] = q.y; p[k * 3 + 2] = 0;
+          }
+        }
+        geo.attributes.position.needsUpdate = true;
+      }
+    };
+  }
+
+  if (tipo === 'stelle') {
+    const stelle = [];
+    for (let i = 0; i < 5; i++) {
+      const st = creaStella();
+      gruppo.add(st);
+      stelle.push(st);
+    }
+    const Rx = dim.metaLarghezza + 0.2;
+    const Ry = 0.5;
+    const cy = dim.altezzaNome / 2 + 0.12;
+    return {
+      gruppo,
+      aggiorna(t) {
+        for (let i = 0; i < stelle.length; i++) {
+          const ph = (t * 0.3 + i / stelle.length) % 1;
+          const a = ph * Math.PI;
+          stelle[i].position.set(-Math.cos(a) * Rx, cy + Math.sin(a) * Ry, 0);
+          stelle[i].scale.setScalar(0.05 + 0.75 * Math.sin(a));
+          stelle[i].rotation.y = t * 2 + i;
+          stelle[i].material.emissiveIntensity = 0.6 + 0.4 * Math.sin(t * 3 + i);
+        }
+      }
+    };
+  }
+
+  if (tipo === 'regali') {
+    const colori = [0xc8102e, 0x2e8b57, 0x3a7bd5, 0xd4b05a];
+    const regali = colori.map((c, i) => {
+      const r = creaRegalo(c);
+      r.position.x = (i - 1.5) * dim.metaLarghezza * 0.5;
+      gruppo.add(r);
+      return r;
+    });
+    const base = -dim.altezzaNome / 2 - 0.17;
+    return {
+      gruppo,
+      aggiorna(t) {
+        for (let i = 0; i < regali.length; i++) {
+          regali[i].position.y = base + Math.abs(Math.sin(t * 2.6 + i * 0.8)) * 0.14;
+          regali[i].rotation.y = t * 1.5 + i;
+        }
+      }
+    };
+  }
+
+  if (tipo === 'fuochi') {
+    const B = 3, Pn = 60;
+    const M = B * (Pn + 1);
+    const pos = new Float32Array(M * 3);
+    const col = new Float32Array(M * 3);
+    const dir = new Float32Array(Pn * 3);
+    const vel = new Float32Array(Pn);
+    for (let i = 0; i < Pn; i++) {
+      const th = Math.random() * Math.PI * 2;
+      const ph = Math.acos(2 * Math.random() - 1);
+      dir[i * 3] = Math.sin(ph) * Math.cos(th);
+      dir[i * 3 + 1] = Math.sin(ph) * Math.sin(th);
+      dir[i * 3 + 2] = Math.cos(ph) * 0.5;
+      vel[i] = 0.25 + Math.random() * 0.3;
+    }
+    const palette = [[1, 0.35, 0.35], [1, 0.85, 0.4], [0.5, 0.8, 1], [0.6, 1, 0.6], [1, 0.6, 1]];
+    const stato = [];
+    for (let b = 0; b < B; b++) stato.push({ ciclo: -1, bx: 0, by: 0, c: palette[0] });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const punti = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 9,
+      sizeAttenuation: false,
+      map: dim.tex,
+      vertexColors: true,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    }));
+    punti.frustumCulled = false;
+    gruppo.add(punti);
+    const nascondi = (i) => {
+      pos[i * 3] = 0; pos[i * 3 + 1] = -100; pos[i * 3 + 2] = 0;
+      col[i * 3] = 0; col[i * 3 + 1] = 0; col[i * 3 + 2] = 0;
+    };
+    return {
+      gruppo,
+      aggiorna(t) {
+        const C = 3.6;
+        for (let b = 0; b < B; b++) {
+          const tl = t + b * 1.2;
+          const ciclo = Math.floor(tl / C);
+          const lt = tl - ciclo * C;
+          const stb = stato[b];
+          if (stb.ciclo !== ciclo) {
+            stb.ciclo = ciclo;
+            stb.bx = (Math.random() * 2 - 1) * (dim.metaLarghezza + 0.3);
+            stb.by = yAlto + 0.05 + Math.random() * 0.35;
+            stb.c = palette[Math.floor(Math.random() * palette.length)];
+          }
+          const base = b * (Pn + 1);
+          const y0 = yAlto - 0.55;
+          if (lt < 0.7) {
+            const u = lt / 0.7;
+            pos[base * 3] = stb.bx;
+            pos[base * 3 + 1] = y0 + (stb.by - y0) * u;
+            pos[base * 3 + 2] = 0;
+            col[base * 3] = 1; col[base * 3 + 1] = 0.9; col[base * 3 + 2] = 0.6;
+          } else {
+            nascondi(base);
+          }
+          for (let i = 0; i < Pn; i++) {
+            const idx = base + 1 + i;
+            const tau = lt - 0.7;
+            if (lt >= 0.7 && tau < 2.0) {
+              const f = Math.pow(Math.max(0, 1 - tau / 2.0), 1.5);
+              pos[idx * 3] = stb.bx + dir[i * 3] * vel[i] * tau;
+              pos[idx * 3 + 1] = stb.by + dir[i * 3 + 1] * vel[i] * tau - 0.12 * tau * tau;
+              pos[idx * 3 + 2] = dir[i * 3 + 2] * vel[i] * tau;
+              col[idx * 3] = stb.c[0] * f; col[idx * 3 + 1] = stb.c[1] * f; col[idx * 3 + 2] = stb.c[2] * f;
+            } else {
+              nascondi(idx);
+            }
+          }
+        }
+        geo.attributes.position.needsUpdate = true;
+        geo.attributes.color.needsUpdate = true;
+      }
+    };
+  }
+
+  if (tipo === 'renna') {
+    const r = creaRenna();
+    r.gruppo.scale.setScalar(1.8);
+    r.gruppo.rotation.y = Math.PI;       // guarda verso sinistra
+    const contenitore = new THREE.Group();
+    contenitore.add(r.gruppo);
+    gruppo.add(contenitore);
+    return {
+      gruppo,
+      aggiorna(t) {
+        const u = (t % 8) / 6;            // 6 secondi di volo, poi pausa
+        if (u > 1) { contenitore.visible = false; return; }
+        contenitore.visible = true;
+        contenitore.position.x = ESTENSIONE - 2 * ESTENSIONE * u;
+        contenitore.position.y = yAlto + 0.1 + Math.sin(u * Math.PI) * 0.1 + Math.sin(t * 3) * 0.02;
+        r.anima(t);
+      }
+    };
+  }
+
+  if (tipo === 'cadenti') {
+    const S = 3, N = 18;
+    const pos = new Float32Array(S * N * 3);
+    const col = new Float32Array(S * N * 3);
+    for (let s = 0; s < S; s++) {
+      for (let k = 0; k < N; k++) {
+        const f = Math.pow(1 - k / N, 1.5);
+        const i = (s * N + k) * 3;
+        col[i] = 0.9 * f; col[i + 1] = 0.95 * f; col[i + 2] = 1.0 * f;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const punti = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 9,
+      sizeAttenuation: false,
+      map: dim.tex,
+      vertexColors: true,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    }));
+    punti.frustumCulled = false;
+    gruppo.add(punti);
+    const stato = [];
+    for (let s = 0; s < S; s++) stato.push({ ciclo: -1, xs: 0, ys: 0 });
+    return {
+      gruppo,
+      aggiorna(t) {
+        const C = 3.0, D = 0.9;
+        for (let s = 0; s < S; s++) {
+          const tl = t + s * 1.0;
+          const ciclo = Math.floor(tl / C);
+          const lt = tl - ciclo * C;
+          const stb = stato[s];
+          if (stb.ciclo !== ciclo) {
+            stb.ciclo = ciclo;
+            stb.xs = -0.3 + Math.random() * 1.4;
+            stb.ys = yAlto + 0.1 + Math.random() * 0.4;
+          }
+          const u = lt / D;
+          for (let k = 0; k < N; k++) {
+            const uk = u - k * 0.03;
+            const i = (s * N + k) * 3;
+            if (uk < 0 || uk > 1) {
+              pos[i] = 0; pos[i + 1] = -100; pos[i + 2] = 0;
+            } else {
+              pos[i] = stb.xs - uk * 0.9;
+              pos[i + 1] = stb.ys - uk * 0.55;
+              pos[i + 2] = 0;
+            }
+          }
+        }
+        geo.attributes.position.needsUpdate = true;
+      }
+    };
+  }
+
+  return null;
+}
+
+async function avvia() {
+  const mindarThree = new MindARThree({
+    container: document.getElementById('container'),
+    imageTargetSrc: './schede12.mind',
+    uiLoading: 'no',
+    uiScanning: 'no',
+    uiError: 'no',
+    filterMinCF: 0.001,
+    filterBeta: 0.01,
+    missTolerance: 6,
+    warmupTolerance: 4
+  });
+  const { renderer, scene, camera } = mindarThree;
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const luce1 = new THREE.DirectionalLight(0xfff2cc, 1.6);
+  luce1.position.set(1, 2, 3);
+  scene.add(luce1);
+  const luce2 = new THREE.DirectionalLight(0xffd27a, 0.8);
+  luce2.position.set(-2, -1, 2);
+  scene.add(luce2);
+
+  const font = await caricaFont();
+
+  // Texture del fiocco di neve (condivisa)
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const cx = cv.getContext('2d');
+  const gr = cx.createRadialGradient(32, 32, 0, 32, 32, 30);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.45, 'rgba(255,255,255,0.95)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  cx.fillStyle = gr;
+  cx.fillRect(0, 0, 64, 64);
+  const texturaFiocco = new THREE.CanvasTexture(cv);
+
+  const materialeNome = new THREE.MeshPhongMaterial({
+    color: 0xc8102e,
+    specular: 0xffb8b8,
+    shininess: 60
+  });
+
+  const NUM = 420;
+  const X = 1.6, Y0 = -0.3, Y1 = 1.1, Z0 = 0.02, Z1 = 0.7;
+
+  // Una scheda = un ancoraggio con nome, effetto, oggetto a fine nome e neve
+  const schede = [];
+
+  NOMI.forEach((voce, indice) => {
+    const nome = voce.nome;
+    const anchor = mindarThree.addAnchor(indice);
+    const st = { visibile: false, fine: null, fx: null };
+
+    const gruppo = new THREE.Group();
+    gruppo.position.set(0, 0, 0.18);
+    anchor.group.add(gruppo);
+    st.gruppo = gruppo;
+
+    // Nome 3D
+    const geo = new TextGeometry(nome, {
+      font: font,
+      size: 0.5,
+      height: 0.18,
+      curveSegments: 6,
+      bevelEnabled: true,
+      bevelThickness: 0.02,
+      bevelSize: 0.015,
+      bevelSegments: 3
+    });
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    const larghezza = bb.max.x - bb.min.x;
+    const altezzaOrig = bb.max.y - bb.min.y;
+    geo.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -(bb.min.z + bb.max.z) / 2);
+    const mesh = new THREE.Mesh(geo, materialeNome);
+    const SCALA_NOME = LARGHEZZA_NOME / larghezza;
+    mesh.scale.setScalar(SCALA_NOME);
+    gruppo.add(mesh);
+
+    const altezzaNome = altezzaOrig * SCALA_NOME;
+
+    // Oggetto alla fine del nome (a destra)
+    const metaLarghezza = (larghezza * SCALA_NOME) / 2;
+    st.fine = creaFine(voce.fine, ALTEZZA_FINE, texturaFiocco);
+    if (st.fine) {
+      st.fine.gruppo.position.set(metaLarghezza + st.fine.larghezza / 2 + 0.06, -altezzaNome / 2, 0);
+      gruppo.add(st.fine.gruppo);
+    }
+
+    // Effetto animato in movimento (diverso a seconda del nome)
+    st.fx = creaEffetto(voce.effetto, { metaLarghezza, altezzaNome, tex: texturaFiocco });
+    if (st.fx) anchor.group.add(st.fx.gruppo);
+
+    // Neve
+    const pos = new Float32Array(NUM * 3);
+    st.vel = new Float32Array(NUM);
+    st.fase = new Float32Array(NUM);
+    for (let i = 0; i < NUM; i++) {
+      pos[i * 3]     = (Math.random() * 2 - 1) * X;
+      pos[i * 3 + 1] = Y0 + Math.random() * (Y1 - Y0);
+      pos[i * 3 + 2] = Z0 + Math.random() * (Z1 - Z0);
+      st.vel[i] = 0.15 + Math.random() * 0.25;
+      st.fase[i] = Math.random() * Math.PI * 2;
+    }
+    st.geoNeve = new THREE.BufferGeometry();
+    st.geoNeve.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const puntiNeve = new THREE.Points(st.geoNeve, new THREE.PointsMaterial({
+      size: 13,
+      sizeAttenuation: false,
+      map: texturaFiocco,
+      transparent: true,
+      depthWrite: false
+    }));
+    puntiNeve.frustumCulled = false;
+    anchor.group.add(puntiNeve);
+
+    anchor.onTargetFound = () => {
+      st.visibile = true;
+      if (DEBUG) {
+        hintText.textContent = 'Scheda ' + (indice + 1) + ': ' + nome;
+        hint.style.display = 'block';
+      } else {
+        hint.style.display = 'none';
+      }
+    };
+    anchor.onTargetLost = () => {
+      st.visibile = false;
+      hintText.textContent = 'Inquadra una scheda';
+      hint.style.display = 'block';
+    };
+
+    schede.push(st);
+  });
+
+  await mindarThree.start();
+  startScreen.style.display = 'none';
+  hint.style.display = 'block';
+  info.style.display = 'block';
+
+  const clock = new THREE.Clock();
+  let frame = 0;
+  let ultimo = performance.now();
+
+  renderer.setAnimationLoop(() => {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+
+    for (const st of schede) {
+      if (!st.visibile) continue;
+      if (st.fx) st.fx.aggiorna(t);
+
+      st.gruppo.rotation.z = Math.sin(t * 0.7) * 0.05;
+      st.gruppo.position.y = Math.sin(t * 0.9) * 0.02;
+
+      if (st.fine) st.fine.aggiorna(t);
+
+      const p = st.geoNeve.attributes.position.array;
+      for (let i = 0; i < NUM; i++) {
+        p[i * 3 + 1] -= st.vel[i] * dt;
+        p[i * 3] += Math.sin(t + st.fase[i]) * 0.05 * dt;
+        if (p[i * 3 + 1] < Y0) {
+          p[i * 3 + 1] = Y1;
+          p[i * 3] = (Math.random() * 2 - 1) * X;
+        }
+      }
+      st.geoNeve.attributes.position.needsUpdate = true;
+    }
+
+    renderer.render(scene, camera);
+
+    frame++;
+    const ora = performance.now();
+    if (ora - ultimo >= 1000) {
+      info.textContent = frame + ' fps';
+      frame = 0;
+      ultimo = ora;
+    }
+  });
+}
+
+document.getElementById('btn').addEventListener('click', async () => {
+  msg.textContent = '';
+  document.getElementById('btn').disabled = true;
+  try {
+    await avvia();
+  } catch (e) {
+    document.getElementById('btn').disabled = false;
+    let testo = 'Errore: ' + (e && e.message ? e.message : e);
+    if (e && e.name === 'NotAllowedError') {
+      testo = 'Permesso alla fotocamera negato. Consentilo nelle impostazioni del browser e ricarica la pagina.';
+    }
+    msg.textContent = testo;
+  }
+});
+</script>
+</body>
+</html>
